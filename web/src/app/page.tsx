@@ -8,12 +8,11 @@ export default function Home() {
         <p className="text-lg text-slate-600 mb-8">Bienvenido al sistema de seguimiento metabólico.</p>
 
         <Link
-          href="/pacientes"
+          href="/login"
           className="bg-primary text-primary-foreground px-6 py-3 rounded-lg font-medium hover:opacity-90 transition-opacity"
         >
-          Entrar al Dashboard
+          Entrar al Sistema
         </Link>
-      </div>
-    </main>
+      </div>    </main>
   );
 }
