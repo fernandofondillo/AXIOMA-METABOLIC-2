@@ -1,12 +1,10 @@
-import Link from 'next/link';
-
 export default function Home() {
   return (
-    <main style={{ padding: '50px', textAlign: 'center', fontFamily: 'sans-serif' }}>
+    <div style={{ padding: '50px', fontFamily: 'sans-serif' }}>
       <h1>Axioma Metabolic Online</h1>
-      <Link href="/login" style={{ color: 'blue', textDecoration: 'underline' }}>
+      <a href='/login' style={{ display: 'inline-block', marginTop: '20px', color: 'blue', textDecoration: 'underline' }}>
         Ir a Login
-      </Link>
-    </main>
+      </a>
+    </div>
   );
 }
