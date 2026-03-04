@@ -10,7 +10,7 @@
 create extension if not exists vector;
 
 -- 2. Create organizations table (multi-centro)
-create table organizations (
+create table if not exists organizations (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
@@ -18,9 +18,13 @@ create table organizations (
 
 -- 3. Create profiles table (links auth.users with app logic)
 -- Role enum: admin, professional, patient
-create type user_role as enum ('admin', 'professional', 'patient');
+DO $$ BEGIN
+    CREATE TYPE user_role AS ENUM ('admin', 'professional', 'patient');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
-create table profiles (
+create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   role user_role not null default 'patient',
@@ -30,7 +34,7 @@ create table profiles (
 
 -- 4. PII-Vault Architecture
 -- Tabla: patients_identity
-create table patients_identity (
+create table if not exists patients_identity (
   id uuid primary key default gen_random_uuid(),
   full_name text not null,
   contact text,
@@ -39,7 +43,7 @@ create table patients_identity (
 );
 
 -- Tabla: metabolic_profiles
-create table metabolic_profiles (
+create table if not exists metabolic_profiles (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references patients_identity(id) on delete cascade,
   birth_year integer,
@@ -49,7 +53,7 @@ create table metabolic_profiles (
 );
 
 -- Tabla: metabolic_metrics
-create table metabolic_metrics (
+create table if not exists metabolic_metrics (
   id uuid primary key default gen_random_uuid(),
   patient_id uuid not null references patients_identity(id) on delete cascade,
   glucosa numeric,
@@ -68,54 +72,77 @@ alter table patients_identity enable row level security;
 alter table metabolic_profiles enable row level security;
 alter table metabolic_metrics enable row level security;
 
-create policy "Organizations visible to its own members and admins"
-  on organizations for select using (
-    id = (select organization_id from profiles where profiles.id = auth.uid()) OR
-    (select role from profiles where profiles.id = auth.uid()) = 'admin'
-  );
+DO $$ BEGIN
+    create policy "Organizations visible to its own members and admins"
+      on organizations for select using (
+        id = (select organization_id from profiles where profiles.id = auth.uid()) OR
+        (select role from profiles where profiles.id = auth.uid()) = 'admin'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-create policy "Users can read profiles in their org or if they are admin"
-  on profiles for select using (
-    organization_id = (select organization_id from profiles where profiles.id = auth.uid()) OR
-    id = auth.uid() OR
-    (select role from profiles where profiles.id = auth.uid()) = 'admin'
-  );
+DO $$ BEGIN
+    create policy "Users can read profiles in their org or if they are admin"
+      on profiles for select using (
+        organization_id = (select organization_id from profiles where profiles.id = auth.uid()) OR
+        id = auth.uid() OR
+        (select role from profiles where profiles.id = auth.uid()) = 'admin'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-create policy "Professionals can access patients in their org"
-  on patients_identity for all using (
-    organization_id = (select organization_id from profiles where profiles.id = auth.uid()) AND
-    (select role from profiles where profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ BEGIN
+    create policy "Professionals can access patients in their org"
+      on patients_identity for all using (
+        organization_id = (select organization_id from profiles where profiles.id = auth.uid()) AND
+        (select role from profiles where profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-create policy "Professionals can access metabolic profiles in their org"
-  on metabolic_profiles for all using (
-    (select organization_id from patients_identity where patients_identity.id = metabolic_profiles.patient_id) = 
-    (select organization_id from profiles where profiles.id = auth.uid()) AND
-    (select role from profiles where profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ BEGIN
+    create policy "Professionals can access metabolic profiles in their org"
+      on metabolic_profiles for all using (
+        (select organization_id from patients_identity where patients_identity.id = metabolic_profiles.patient_id) = 
+        (select organization_id from profiles where profiles.id = auth.uid()) AND
+        (select role from profiles where profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-create policy "Professionals can access metabolic metrics in their org"
-  on metabolic_metrics for all using (
-    (select organization_id from patients_identity where patients_identity.id = metabolic_metrics.patient_id) = 
-    (select organization_id from profiles where profiles.id = auth.uid()) AND
-    (select role from profiles where profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ BEGIN
+    create policy "Professionals can access metabolic metrics in their org"
+      on metabolic_metrics for all using (
+        (select organization_id from patients_identity where patients_identity.id = metabolic_metrics.patient_id) = 
+        (select organization_id from profiles where profiles.id = auth.uid()) AND
+        (select role from profiles where profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 
 -- -------------------------------------------------------------------------------------
 -- PART 2: INTERVIEW ENGINE (00000000000001_interview_engine.sql)
 -- -------------------------------------------------------------------------------------
 
-ALTER TABLE metabolic_metrics
-ADD COLUMN peso numeric,
-ADD COLUMN altura numeric,
-ADD COLUMN perimetro_cintura numeric,
-ADD COLUMN imc numeric,
-ADD COLUMN porcentaje_grasa numeric,
-ADD COLUMN edad integer,
-ADD COLUMN sexo text;
+DO $$ 
+BEGIN
+    BEGIN
+        ALTER TABLE metabolic_metrics
+        ADD COLUMN peso numeric,
+        ADD COLUMN altura numeric,
+        ADD COLUMN perimetro_cintura numeric,
+        ADD COLUMN imc numeric,
+        ADD COLUMN porcentaje_grasa numeric,
+        ADD COLUMN edad integer,
+        ADD COLUMN sexo text;
+    EXCEPTION
+        WHEN duplicate_column THEN RAISE NOTICE 'Las columnas ya existen en metabolic_metrics.';
+    END;
 
-CREATE TABLE medical_history (
+    BEGIN
+        CREATE TYPE interview_type AS ENUM ('inicial', 'seguimiento');
+    EXCEPTION
+        WHEN duplicate_object THEN RAISE NOTICE 'El tipo interview_type ya existe.';
+    END;
+END $$;
+
+CREATE TABLE IF NOT EXISTS medical_history (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patients_identity(id) ON DELETE CASCADE,
     patologias_asociadas jsonb DEFAULT '[]'::jsonb,
@@ -124,9 +151,7 @@ CREATE TABLE medical_history (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-CREATE TYPE interview_type AS ENUM ('inicial', 'seguimiento');
-
-CREATE TABLE interviews (
+CREATE TABLE IF NOT EXISTS interviews (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patients_identity(id) ON DELETE CASCADE,
     type interview_type NOT NULL,
@@ -135,7 +160,7 @@ CREATE TABLE interviews (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
--- Algoritmos de Calculo Automatico
+-- Algoritmos de Calculo Automático (Este siempre se actualiza con OR REPLACE)
 CREATE OR REPLACE FUNCTION trigger_calculate_metabolic_indices()
 RETURNS trigger AS $$
 BEGIN
@@ -151,36 +176,43 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS calculate_metabolic_indices_trigger ON metabolic_metrics;
 CREATE TRIGGER calculate_metabolic_indices_trigger
 BEFORE INSERT OR UPDATE ON metabolic_metrics
 FOR EACH ROW
 EXECUTE FUNCTION trigger_calculate_metabolic_indices();
 
--- RLS
+-- RLS y Políticas
 ALTER TABLE medical_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE interviews ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Professionals can access medical history in their org"
-  ON medical_history FOR ALL USING (
-    (SELECT organization_id FROM patients_identity WHERE patients_identity.id = medical_history.patient_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access medical history in their org"
+      ON medical_history FOR ALL USING (
+        (SELECT organization_id FROM patients_identity WHERE patients_identity.id = medical_history.patient_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "Professionals can access interviews in their org"
-  ON interviews FOR ALL USING (
-    (SELECT organization_id FROM patients_identity WHERE patients_identity.id = interviews.patient_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access interviews in their org"
+      ON interviews FOR ALL USING (
+        (SELECT organization_id FROM patients_identity WHERE patients_identity.id = interviews.patient_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- -------------------------------------------------------------------------------------
--- PART 3: PATTERN MEMORY (00000000000002_pattern_memory.sql)
+-- PARTE 3: MEMORIA DE PATRONES Y VECTORES
 -- -------------------------------------------------------------------------------------
 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
-CREATE TABLE habit_vectors (
+CREATE TABLE IF NOT EXISTS habit_vectors (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patients_identity(id) ON DELETE CASCADE,
     interview_id uuid REFERENCES interviews(id) ON DELETE SET NULL,
@@ -192,12 +224,15 @@ CREATE TABLE habit_vectors (
 
 ALTER TABLE habit_vectors ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Professionals can access habit vectors in their org"
-  ON habit_vectors FOR ALL USING (
-    (SELECT organization_id FROM patients_identity WHERE patients_identity.id = habit_vectors.patient_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access habit vectors in their org"
+      ON habit_vectors FOR ALL USING (
+        (SELECT organization_id FROM patients_identity WHERE patients_identity.id = habit_vectors.patient_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 CREATE OR REPLACE FUNCTION match_patient_patterns(
   query_embedding vector(1536),
@@ -231,10 +266,10 @@ $$;
 
 
 -- -------------------------------------------------------------------------------------
--- PART 4: PATIENT TRACKING (00000000000003_patient_tracking.sql)
+-- PARTE 4: SEGUIMIENTO DIARIO DE PACIENTES
 -- -------------------------------------------------------------------------------------
 
-CREATE TABLE daily_logs (
+CREATE TABLE IF NOT EXISTS daily_logs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patients_identity(id) ON DELETE CASCADE,
     hunger_pre integer CHECK (hunger_pre BETWEEN 1 AND 10),
@@ -246,7 +281,7 @@ CREATE TABLE daily_logs (
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
-CREATE TABLE micro_goals (
+CREATE TABLE IF NOT EXISTS micro_goals (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id uuid NOT NULL REFERENCES patients_identity(id) ON DELETE CASCADE,
     description text NOT NULL,
@@ -255,7 +290,7 @@ CREATE TABLE micro_goals (
     created_by_professional_id uuid REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
-CREATE TABLE micro_goal_completions (
+CREATE TABLE IF NOT EXISTS micro_goal_completions (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     goal_id uuid NOT NULL REFERENCES micro_goals(id) ON DELETE CASCADE,
     completed_date date NOT NULL DEFAULT CURRENT_DATE,
@@ -267,25 +302,34 @@ ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE micro_goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE micro_goal_completions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Professionals can access daily logs in org"
-  ON daily_logs FOR ALL USING (
-    (SELECT organization_id FROM patients_identity WHERE patients_identity.id = daily_logs.patient_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access daily logs in org"
+      ON daily_logs FOR ALL USING (
+        (SELECT organization_id FROM patients_identity WHERE patients_identity.id = daily_logs.patient_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "Professionals can access micro goals in org"
-  ON micro_goals FOR ALL USING (
-    (SELECT organization_id FROM patients_identity WHERE patients_identity.id = micro_goals.patient_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access micro goals in org"
+      ON micro_goals FOR ALL USING (
+        (SELECT organization_id FROM patients_identity WHERE patients_identity.id = micro_goals.patient_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-CREATE POLICY "Professionals can access micro goals completions in org"
-  ON micro_goal_completions FOR ALL USING (
-    (SELECT organization_id FROM patients_identity p
-     JOIN micro_goals g ON g.patient_id = p.id
-     WHERE g.id = micro_goal_completions.goal_id) = 
-    (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
-    (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
-  );
+DO $$ 
+BEGIN
+    CREATE POLICY "Professionals can access micro goals completions in org"
+      ON micro_goal_completions FOR ALL USING (
+        (SELECT organization_id FROM patients_identity p
+         JOIN micro_goals g ON g.patient_id = p.id
+         WHERE g.id = micro_goal_completions.goal_id) = 
+        (SELECT organization_id FROM profiles WHERE profiles.id = auth.uid()) AND
+        (SELECT role FROM profiles WHERE profiles.id = auth.uid()) = 'professional'
+      );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
