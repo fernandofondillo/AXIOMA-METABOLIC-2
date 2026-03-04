@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function middleware(request: NextRequest) {
-    // Pass-through middleware for testing
+export async function proxy(request: NextRequest) {
+    // Pass-through proxy for testing
     return NextResponse.next();
 }
 
