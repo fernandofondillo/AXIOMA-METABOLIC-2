@@ -1,13 +1,10 @@
 import type { NextConfig } from "next";
-
 const nextConfig: NextConfig = {
-  /* config options here */
   eslint: {
-    ignoreDuringBuilds: true, // Deploy to Vercel without blocking on lint
+    ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: true, // Deploy to Vercel without blocking on type errors
-  },
+    ignoreBuildErrors: true,
+  }
 };
-
 export default nextConfig;
