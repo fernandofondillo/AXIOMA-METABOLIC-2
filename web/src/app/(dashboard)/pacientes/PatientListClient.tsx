@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +11,7 @@ import { createPatientAction } from '@/app/actions/patients';
 import { toast } from 'sonner';
 
 export default function PatientListClient({ initialPatients }: { initialPatients: any[] }) {
+    const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +55,7 @@ export default function PatientListClient({ initialPatients }: { initialPatients
             const result = await createPatientAction(formData);
 
             if (result.success) {
-                toast.success('Expediente creado con éxito');
+                toast.success('✅ Expediente creado con éxito. Ya aparece en la lista.');
                 setIsModalOpen(false);
                 setNewPatient({
                     nombre: '',
@@ -62,8 +64,10 @@ export default function PatientListClient({ initialPatients }: { initialPatients
                     telefono: '',
                     fechaNacimiento: '',
                 });
+                // Refresh the Server Component data so the new patient appears immediately
+                router.refresh();
             } else {
-                toast.error(result.error || 'Oops! Hubo un problema.');
+                toast.error(result.error || 'Oops! Hubo un problema al crear el expediente.');
             }
         } catch (error: any) {
             toast.error(error?.message || 'Error inesperado al crear el paciente.');
