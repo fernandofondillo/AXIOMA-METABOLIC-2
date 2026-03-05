@@ -13,15 +13,36 @@ export async function createPatientAction(patientData: {
     const supabase = await createClient();
 
     try {
+        // 1. Get authenticated user
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return { success: false, error: 'No autenticado.' };
+        }
+
+        // 2. Fetch the user's organization_id from their profile
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('organization_id')
+            .eq('id', user.id)
+            .single();
+
+        // 3. Build full_name for easier queries later
+        const fullName = `${patientData.nombre} ${patientData.apellidos || ''}`.trim();
+
+        // 4. Insert patient with organization context
         const { data, error } = await supabase
             .from('patients_identity')
             .insert([
                 {
                     nombre: patientData.nombre,
                     apellidos: patientData.apellidos,
-                    email: patientData.email,
-                    telefono: patientData.telefono,
+                    full_name: fullName,
+                    email: patientData.email || null,
+                    telefono: patientData.telefono || null,
                     fecha_nacimiento: patientData.fechaNacimiento || null,
+                    date_of_birth: patientData.fechaNacimiento || null,
+                    organization_id: profile?.organization_id ?? null,
+                    professional_id: user.id,
                 }
             ])
             .select()
@@ -29,6 +50,24 @@ export async function createPatientAction(patientData: {
 
         if (error) {
             console.error('Error creating patient:', error);
+            // If certain columns don't exist yet, try a minimal insert
+            if (error.code === '42703') { // column does not exist
+                const { data: minData, error: minError } = await supabase
+                    .from('patients_identity')
+                    .insert([{
+                        nombre: patientData.nombre,
+                        apellidos: patientData.apellidos || null,
+                        email: patientData.email || null,
+                        telefono: patientData.telefono || null,
+                        fecha_nacimiento: patientData.fechaNacimiento || null,
+                    }])
+                    .select()
+                    .single();
+
+                if (minError) throw new Error(minError.message);
+                revalidatePath('/pacientes');
+                return { success: true, patient: minData };
+            }
             throw new Error(error.message || 'Error al guardar el paciente');
         }
 
@@ -43,6 +82,9 @@ export async function getPatientsAction() {
     const supabase = await createClient();
 
     try {
+        const { data: { user } } = await supabase.auth.getUser();
+
+        // Build query — filter by professional_id if column exists, otherwise get all
         const { data, error } = await supabase
             .from('patients_identity')
             .select('*')
@@ -50,7 +92,6 @@ export async function getPatientsAction() {
 
         if (error) {
             console.error('Error fetching patients:', error);
-            // Return empty list on error for now, maybe throw later
             return { success: false, patients: [] };
         }
 

@@ -7,6 +7,7 @@ export interface ProfileData {
     full_name: string;
     specialty: string;
     medical_center: string;
+    bio: string;
 }
 
 export async function updateProfileAction(data: ProfileData): Promise<{ success: boolean; error?: string }> {
@@ -24,6 +25,7 @@ export async function updateProfileAction(data: ProfileData): Promise<{ success:
             full_name: data.full_name,
             specialty: data.specialty,
             medical_center: data.medical_center,
+            bio: data.bio,
             updated_at: new Date().toISOString(),
         });
 
@@ -33,5 +35,25 @@ export async function updateProfileAction(data: ProfileData): Promise<{ success:
     }
 
     revalidatePath('/configuracion');
+    revalidatePath('/'); // Revalidate header too
     return { success: true };
+}
+
+export async function getProfileAction(): Promise<ProfileData | null> {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data } = await supabase
+        .from('profiles')
+        .select('full_name, specialty, medical_center, bio')
+        .eq('id', user.id)
+        .single();
+
+    return data ? {
+        full_name: data.full_name ?? '',
+        specialty: data.specialty ?? '',
+        medical_center: data.medical_center ?? '',
+        bio: data.bio ?? '',
+    } : null;
 }

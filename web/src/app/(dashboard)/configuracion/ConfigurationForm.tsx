@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { updateProfileAction, ProfileData } from '@/app/actions/profile';
 import { toast } from 'sonner';
-import { Save, CheckCircle } from 'lucide-react';
+import { Save, CheckCircle, User } from 'lucide-react';
 
 interface Props {
     initialData: ProfileData;
@@ -17,6 +18,7 @@ export function ConfigurationForm({ initialData }: Props) {
     const [fullName, setFullName] = useState(initialData.full_name ?? '');
     const [specialty, setSpecialty] = useState(initialData.specialty ?? '');
     const [medicalCenter, setMedicalCenter] = useState(initialData.medical_center ?? '');
+    const [bio, setBio] = useState(initialData.bio ?? '');
     const [isSaving, setIsSaving] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -28,10 +30,11 @@ export function ConfigurationForm({ initialData }: Props) {
                 full_name: fullName,
                 specialty,
                 medical_center: medicalCenter,
+                bio,
             });
 
             if (result.success) {
-                toast.success('Perfil actualizado correctamente. Los cambios se verán en el informe del paciente.');
+                toast.success('✅ Perfil actualizado. El nombre y especialidad ya aparecerán en el header y en los informes.');
             } else {
                 toast.error('Error al guardar: ' + (result.error ?? 'Inténtalo de nuevo.'));
             }
@@ -46,12 +49,19 @@ export function ConfigurationForm({ initialData }: Props) {
         <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
             <Card className="border-slate-200">
                 <CardHeader>
-                    <CardTitle className="text-base font-semibold text-slate-800">Datos Profesionales</CardTitle>
-                    <CardDescription>Esta información aparecerá en la cabecera de los informes de pacientes y en el encabezado de la plataforma.</CardDescription>
+                    <CardTitle className="text-base font-semibold text-slate-800 flex items-center gap-2">
+                        <User className="w-4 h-4 text-primary" />
+                        Datos Profesionales
+                    </CardTitle>
+                    <CardDescription>
+                        Esta información aparece en el <strong>header</strong> de la plataforma y en la cabecera de los <strong>informes de pacientes</strong>.
+                    </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-5">
                     <div className="space-y-2">
-                        <Label htmlFor="full-name" className="text-slate-700">Nombre Completo</Label>
+                        <Label htmlFor="full-name" className="text-slate-700">
+                            Nombre Completo <span className="text-red-500">*</span>
+                        </Label>
                         <Input
                             id="full-name"
                             value={fullName}
@@ -60,26 +70,43 @@ export function ConfigurationForm({ initialData }: Props) {
                             className="border-slate-300 focus-visible:ring-primary"
                             required
                         />
+                        <p className="text-xs text-slate-400">Aparecerá en el header superior y en la firma del informe.</p>
                     </div>
-                    <div className="space-y-2">
-                        <Label htmlFor="specialty" className="text-slate-700">Especialidad / Título</Label>
-                        <Input
-                            id="specialty"
-                            value={specialty}
-                            onChange={e => setSpecialty(e.target.value)}
-                            placeholder="Ej: Nutricionista Clínica, Endocrinóloga..."
-                            className="border-slate-300 focus-visible:ring-primary"
-                        />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="specialty" className="text-slate-700">Especialidad / Título</Label>
+                            <Input
+                                id="specialty"
+                                value={specialty}
+                                onChange={e => setSpecialty(e.target.value)}
+                                placeholder="Ej: Nutricionista Clínica"
+                                className="border-slate-300 focus-visible:ring-primary"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="medical-center" className="text-slate-700">Centro / Clínica</Label>
+                            <Input
+                                id="medical-center"
+                                value={medicalCenter}
+                                onChange={e => setMedicalCenter(e.target.value)}
+                                placeholder="Ej: Centro Metabólica Madrid"
+                                className="border-slate-300 focus-visible:ring-primary"
+                            />
+                        </div>
                     </div>
+
                     <div className="space-y-2">
-                        <Label htmlFor="medical-center" className="text-slate-700">Centro / Clínica</Label>
-                        <Input
-                            id="medical-center"
-                            value={medicalCenter}
-                            onChange={e => setMedicalCenter(e.target.value)}
-                            placeholder="Ej: Centro de Salud Metabólica Madrid"
-                            className="border-slate-300 focus-visible:ring-primary"
+                        <Label htmlFor="bio" className="text-slate-700">Bio Profesional (Opcional)</Label>
+                        <Textarea
+                            id="bio"
+                            value={bio}
+                            onChange={e => setBio(e.target.value)}
+                            placeholder="Breve descripción de tu trayectoria, enfoque clínico o metodología..."
+                            className="border-slate-300 focus-visible:ring-primary resize-none"
+                            rows={4}
                         />
+                        <p className="text-xs text-slate-400">Puede aparecer en el pie del informe clínico.</p>
                     </div>
                 </CardContent>
             </Card>

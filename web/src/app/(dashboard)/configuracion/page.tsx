@@ -8,11 +8,11 @@ export default async function ConfiguracionPage() {
     const { data: { user } } = await supabase.auth.getUser();
 
     // Fetch existing profile data if any
-    let profileData = { full_name: '', specialty: '', medical_center: '' };
+    let profileData = { full_name: '', specialty: '', medical_center: '', bio: '' };
     if (user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name, specialty, medical_center')
+            .select('full_name, specialty, medical_center, bio')
             .eq('id', user.id)
             .single();
 
@@ -21,9 +21,11 @@ export default async function ConfiguracionPage() {
                 full_name: profile.full_name ?? '',
                 specialty: profile.specialty ?? '',
                 medical_center: profile.medical_center ?? '',
+                bio: profile.bio ?? '',
             };
         }
     }
+
 
     return (
         <div className="space-y-8">
