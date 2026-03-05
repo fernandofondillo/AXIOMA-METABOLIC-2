@@ -7,20 +7,42 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { interviewConfig, InterviewGuide } from '@/config/interviewGuides';
+import { getPatientPhenotype, suggestMicroChanges, PatientMetrics, PatientTriggers, MicroChange } from '@/lib/clinicalEngine';
+import { saveInterviewData } from '@/app/actions/interview';
+import { useRouter } from 'next/navigation';
 
 export function InterviewWizard() {
+    const router = useRouter();
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [step, setStep] = useState(1);
     const [guide] = useState<InterviewGuide>(interviewConfig['inicial']);
 
     // States for Step 1 (Bio-Metrics)
     const [peso, setPeso] = useState<string>('');
     const [altura, setAltura] = useState<string>('');
+    const [cintura, setCintura] = useState<string>('');
+    const [cadera, setCadera] = useState<string>('');
+    const [grasaVisceral, setGrasaVisceral] = useState<string>('');
 
     let imc: number | null = null;
     const p = parseFloat(peso);
     const a = parseFloat(altura); // assumes meters
+    const cin = parseFloat(cintura);
+    const cad = parseFloat(cadera);
+    const gv = parseFloat(grasaVisceral);
+
     if (p > 0 && a > 0) {
         imc = parseFloat((p / (a * a)).toFixed(2));
+    }
+
+    let rca: number | null = null;
+    if (cin > 0 && a > 0) {
+        rca = parseFloat((cin / (a * 100)).toFixed(2));
+    }
+
+    let rcc: number | null = null;
+    if (cin > 0 && cad > 0) {
+        rcc = parseFloat((cin / cad).toFixed(2));
     }
 
     // States for Step 2 (Dynamic Questions)
@@ -31,11 +53,8 @@ export function InterviewWizard() {
 
     // States for Step 3 (Action Plan)
     const [recommendations, setRecommendations] = useState('');
-    const [microChanges, setMicroChanges] = useState<{ label: string, checked: boolean }[]>([
-        { label: 'Beber 2 litros de agua', checked: false },
-        { label: 'Caminata 15 min post-comida', checked: false },
-        { label: 'Apagar pantallas 1h antes de dormir', checked: false }
-    ]);
+    const [generatedPhenotype, setGeneratedPhenotype] = useState<string | null>(null);
+    const [microChanges, setMicroChanges] = useState<{ id: string, label: string, checked: boolean }[]>([]);
 
     const handleMultiselectChange = (questionId: string, optionValue: string) => {
         setAnswers(prev => {
@@ -51,11 +70,83 @@ export function InterviewWizard() {
         return (answers[questionId] || []).includes('otros');
     };
 
-    const nextStep = () => setStep(s => Math.min(s + 1, 3));
+    const handleNextToStep3 = () => {
+        if (microChanges.length === 0) {
+            // Determine Triggers based on answers map (mocking mapping assuming some known IDs if present)
+            // Ideally we'd map specific questions to these, let's just make a generic extraction
+            // and use the clinicalEngine.
+            const hasStress = Object.values(answers).some(ans => ans.includes('estres') || ans.includes('ansiedad'));
+            const hasCravings = Object.values(answers).some(ans => ans.includes('dulces') || ans.includes('antojos'));
+
+            const triggers: PatientTriggers = {
+                nivelEstres: hasStress ? 'Alto' : 'Medio',
+                intensidadAntojos: hasCravings ? 'Alta' : 'Baja',
+                disparadoresEmocionales: hasStress ? ['Estrés crónico'] : []
+            };
+
+            const metrics: PatientMetrics = {
+                peso: p || undefined,
+                altura: a || undefined,
+                perimetroCintura: cin || undefined,
+                perimetroCadera: cad || undefined,
+                grasaVisceral: gv || undefined,
+                imc: imc || undefined
+            };
+
+            const phenotype = getPatientPhenotype(metrics, triggers);
+            setGeneratedPhenotype(phenotype);
+
+            const suggestions = suggestMicroChanges(phenotype, 3);
+            setMicroChanges(suggestions.map(s => ({ id: s.id, label: s.title + ': ' + s.description, checked: true })));
+        }
+        setStep(3);
+    };
+
+    const nextStep = () => {
+        if (step === 2) {
+            handleNextToStep3();
+        } else {
+            setStep(s => Math.min(s + 1, 3));
+        }
+    };
     const prevStep = () => setStep(s => Math.max(s - 1, 1));
-    const submit = () => {
-        console.log("Submit logic pending integration with server actions");
-        // Form data would map to submitInterview()
+    const submit = async () => {
+        setIsSubmitting(true);
+        // Mock Patient ID for now
+        const patientId = 'P-9842';
+
+        const metricsData = {
+            peso: p || null,
+            altura: a || null,
+            perimetro_cintura: cin || null,
+            perimetro_cadera: cad || null,
+            grasa_visceral: gv || null,
+            imc: imc || null
+        };
+
+        const interviewData = {
+            answers,
+            otherDetails,
+            recommendations,
+            phenotype: generatedPhenotype,
+            selected_micro_changes: microChanges.filter(mc => mc.checked)
+        };
+
+        try {
+            const result = await saveInterviewData(patientId, interviewData, metricsData);
+            if (result.success) {
+                // Redirect to the printable report 
+                router.push(`/pacientes/${patientId}/informe`);
+            } else {
+                console.error("Error saving:", result.error);
+                alert("Error al guardar la entrevista: " + result.error);
+            }
+        } catch (error) {
+            console.error("Submission error:", error);
+            alert("Ocurrió un error inesperado al guardar.");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -98,18 +189,54 @@ export function InterviewWizard() {
                                     placeholder="Ej: 1.75" className="border-slate-300 focus-visible:ring-primary"
                                 />
                             </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="cintura" className="text-slate-700">Perímetro Cintura (cm)</Label>
+                                <Input
+                                    id="cintura" type="number" step="0.1"
+                                    value={cintura} onChange={e => setCintura(e.target.value)}
+                                    placeholder="Ej: 85" className="border-slate-300 focus-visible:ring-primary"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="cadera" className="text-slate-700">Perímetro Cadera (cm)</Label>
+                                <Input
+                                    id="cadera" type="number" step="0.1"
+                                    value={cadera} onChange={e => setCadera(e.target.value)}
+                                    placeholder="Ej: 100" className="border-slate-300 focus-visible:ring-primary"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="grasa" className="text-slate-700">Grasa Visceral (1-59)</Label>
+                                <Input
+                                    id="grasa" type="number"
+                                    value={grasaVisceral} onChange={e => setGrasaVisceral(e.target.value)}
+                                    placeholder="Ej: 10" className="border-slate-300 focus-visible:ring-primary"
+                                />
+                            </div>
                         </div>
 
-                        <div className="mt-8 p-6 bg-slate-50 border border-slate-100 rounded-lg flex items-center justify-between">
-                            <div>
-                                <h3 className="text-slate-700 font-medium">Cálculo en Tiempo Real</h3>
-                                <p className="text-sm text-slate-500">Índice de Masa Corporal (IMC)</p>
+                        <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div className="p-4 bg-slate-50 border border-slate-100 rounded-lg flex flex-col items-center justify-center text-center">
+                                <p className="text-xs text-slate-500 font-medium uppercase tracking-wider mb-1">IMC</p>
+                                <span className="text-2xl font-bold text-slate-700">{imc ? imc : '--'}</span>
                             </div>
-                            <div className="text-right">
-                                <span className="text-3xl font-bold text-primary">
-                                    {imc ? imc : '--'}
-                                </span>
-                                <span className="text-slate-400 font-medium ml-1">kg/m²</span>
+
+                            <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!rca ? 'bg-slate-50 border-slate-100' : rca > 0.5 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!rca ? 'text-slate-500' : rca > 0.5 ? 'text-red-600' : 'text-emerald-600'}`}>RCA</p>
+                                <span className="text-2xl font-bold">{rca ? rca : '--'}</span>
+                                {rca && <span className="text-[10px] mt-1 opacity-80">{rca > 0.5 ? 'Riesgo Cardiometabólico' : 'Saludable'}</span>}
+                            </div>
+
+                            <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!rcc ? 'bg-slate-50 border-slate-100' : rcc > 0.85 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!rcc ? 'text-slate-500' : rcc > 0.85 ? 'text-orange-600' : 'text-emerald-600'}`}>RCC</p>
+                                <span className="text-2xl font-bold">{rcc ? rcc : '--'}</span>
+                                {rcc && <span className="text-[10px] mt-1 opacity-80">{rcc > 0.85 ? 'Alerta' : 'Saludable'}</span>}
+                            </div>
+
+                            <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!gv ? 'bg-slate-50 border-slate-100' : gv > 12 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!gv ? 'text-slate-500' : gv > 12 ? 'text-red-600' : 'text-emerald-600'}`}>Visceral</p>
+                                <span className="text-2xl font-bold">{gv ? gv : '--'}</span>
+                                {gv > 0 && <span className="text-[10px] mt-1 opacity-80">{gv > 12 ? 'Exceso Peligroso' : 'Saludable'}</span>}
                             </div>
                         </div>
                     </div>
@@ -177,19 +304,26 @@ export function InterviewWizard() {
                         </div>
 
                         <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-5">
-                            <div className="mb-4">
-                                <h3 className="text-emerald-800 font-semibold text-lg flex items-center gap-2">
-                                    <span className="text-xl">✨</span> Sugerencias de Micro-Cambios
-                                </h3>
-                                <p className="text-emerald-600/80 text-sm font-medium">Basado en algoritmos analíticos (Mock)</p>
+                            <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                <div>
+                                    <h3 className="text-emerald-800 font-semibold text-lg flex items-center gap-2">
+                                        <span className="text-xl">✨</span> Sugerencias de Micro-Cambios
+                                    </h3>
+                                    <p className="text-emerald-600/80 text-sm font-medium">Basado en Inteligencia Clínica</p>
+                                </div>
+                                {generatedPhenotype && (
+                                    <div className="bg-emerald-100 text-emerald-800 text-sm px-3 py-1.5 rounded-full font-medium inline-flex self-start">
+                                        Fenotipo: {generatedPhenotype}
+                                    </div>
+                                )}
                             </div>
 
                             <div className="space-y-3">
-                                {microChanges.map((mc, idx) => (
-                                    <label key={idx} className="flex items-center gap-3 p-3 bg-white rounded-md border border-emerald-200/50 cursor-pointer hover:bg-emerald-50/50 transition-colors">
+                                {microChanges.length > 0 ? microChanges.map((mc, idx) => (
+                                    <label key={mc.id} className="flex items-start gap-3 p-3 bg-white rounded-md border border-emerald-200/50 cursor-pointer hover:bg-emerald-50/50 transition-colors">
                                         <input
                                             type="checkbox"
-                                            className="h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
                                             checked={mc.checked}
                                             onChange={() => {
                                                 const newMc = [...microChanges];
@@ -197,9 +331,11 @@ export function InterviewWizard() {
                                                 setMicroChanges(newMc);
                                             }}
                                         />
-                                        <span className="font-medium text-slate-700">{mc.label}</span>
+                                        <span className="font-medium text-slate-700 leading-snug">{mc.label}</span>
                                     </label>
-                                ))}
+                                )) : (
+                                    <p className="text-sm text-emerald-700">Calculando sugerencias...</p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -211,16 +347,17 @@ export function InterviewWizard() {
                 <Button
                     variant="outline"
                     onClick={prevStep}
-                    disabled={step === 1}
+                    disabled={step === 1 || isSubmitting}
                     className="border-slate-300 text-slate-700 hover:bg-slate-100"
                 >
                     Atrás
                 </Button>
                 <Button
                     onClick={step === 3 ? submit : nextStep}
+                    disabled={isSubmitting}
                     className="bg-primary hover:bg-primary/90 text-white font-medium"
                 >
-                    {step === 3 ? 'Guardar Entrevista' : 'Continuar'}
+                    {isSubmitting ? 'Guardando...' : (step === 3 ? 'Guardar Entrevista' : 'Continuar')}
                 </Button>
             </CardFooter>
         </Card>
