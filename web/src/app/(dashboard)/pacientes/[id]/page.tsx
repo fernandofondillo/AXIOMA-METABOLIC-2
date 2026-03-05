@@ -3,70 +3,117 @@ import { EvolutionCharts } from '@/components/dashboard/EvolutionCharts';
 import { AISidebar } from '@/components/dashboard/AISidebar';
 import { CorrelationMap } from '@/components/dashboard/CorrelationMap';
 import { Button } from '@/components/ui/button';
-import { FilePlus, MessageSquareWarning, AlertTriangle } from 'lucide-react';
+import { FilePlus, MessageSquareWarning, FileText } from 'lucide-react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
+import { notFound } from 'next/navigation';
 
-export default function PatientProfilePage() {
+export default async function PatientProfilePage({ params }: { params: Promise<{ id: string }> }) {
+    const resolvedParams = await params;
+    const patientId = resolvedParams.id;
 
-    // Mock Data for frontend visualization
-    const mockPatientId = 'P-9842';
-    const mockMetrics = {
-        imc: 27.5,
-        homaIr: 3.2, // Resistant
-        pcr: 1.5, // Inflamacion Moderada
-        stressLevel: 'Alto' as const,
+    const supabase = await createClient();
+
+    // Fetch real patient data
+    const { data: patient, error } = await supabase
+        .from('patients_identity')
+        .select('full_name, date_of_birth')
+        .eq('id', patientId)
+        .single();
+
+    if (error || !patient) notFound();
+
+    // Fetch latest metrics
+    const { data: latestMetric } = await supabase
+        .from('metabolic_metrics')
+        .select('imc, glucosa, insulina')
+        .eq('patient_id', patientId)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .single();
+
+    // Fetch latest phenotype from interview
+    const { data: latestInterview } = await supabase
+        .from('interviews')
+        .select('interview_data')
+        .eq('patient_id', patientId)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .single();
+
+    const phenotype = latestInterview?.interview_data?.phenotype ?? 'Pendiente de entrevista';
+
+    const homaIr = (latestMetric?.glucosa && latestMetric?.insulina)
+        ? parseFloat(((latestMetric.glucosa * latestMetric.insulina) / 405).toFixed(2))
+        : undefined;
+
+    const metricsForCards = {
+        imc: latestMetric?.imc ?? undefined,
+        homaIr: homaIr,
+        pcr: undefined as number | undefined,
+        stressLevel: 'Medio' as const,
     };
 
-    const mockEvolutionData = [
-        { date: '01/Oct', peso: 85, porcentaje_grasa: 32, glucosa: 105, insulina: 12 },
-        { date: '15/Oct', peso: 84, porcentaje_grasa: 31, glucosa: 102, insulina: 11 },
-        { date: '01/Nov', peso: 82.5, porcentaje_grasa: 30, glucosa: 98, insulina: 9 },
-        { date: '15/Nov', peso: 81, porcentaje_grasa: 28, glucosa: 95, insulina: 8.5 },
-    ];
+    // Fetch evolution data for charts
+    const { data: evolutionData } = await supabase
+        .from('metabolic_metrics')
+        .select('peso, porcentaje_grasa, glucosa, insulina, recorded_at')
+        .eq('patient_id', patientId)
+        .order('recorded_at', { ascending: true })
+        .limit(10);
 
-    const mockCorrelationData = [
-        { stress_level: 8, craving_intensity: 9, date: '16/Nov', emotion: 'Ansiedad' },
-        { stress_level: 6, craving_intensity: 5, date: '15/Nov', emotion: 'Aburrimiento' },
-        { stress_level: 9, craving_intensity: 10, date: '14/Nov', emotion: 'Tristeza' },
-        { stress_level: 3, craving_intensity: 2, date: '12/Nov', emotion: 'Hambre real' },
-        { stress_level: 7, craving_intensity: 8, date: '10/Nov', emotion: 'Ansiedad' },
-    ];
+    const chartData = (evolutionData ?? []).map(m => ({
+        date: new Date(m.recorded_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+        peso: m.peso,
+        porcentaje_grasa: m.porcentaje_grasa,
+        glucosa: m.glucosa,
+        insulina: m.insulina,
+    }));
 
-    // Mocked prediction banner control
-    const hasRiskPattern = true;
+    // Fetch daily logs for correlation map
+    const { data: dailyLogs } = await supabase
+        .from('daily_logs')
+        .select('stress_level, craving_intensity, log_date, emotion_tag')
+        .eq('patient_id', patientId)
+        .order('log_date', { ascending: false })
+        .limit(14);
+
+    const correlationData = (dailyLogs ?? []).map(l => ({
+        stress_level: l.stress_level,
+        craving_intensity: l.craving_intensity,
+        date: new Date(l.log_date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }),
+        emotion: l.emotion_tag ?? '—',
+    }));
+
+    const age = patient.date_of_birth
+        ? Math.floor((new Date().getTime() - new Date(patient.date_of_birth).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
+        : null;
 
     return (
         <div className="space-y-6">
 
-            {/* AI Pattern Detection Banner */}
-            {hasRiskPattern && (
-                <div className="bg-amber-50 border-l-4 border-amber-500 p-4 rounded-r-md flex items-start gap-4 shadow-sm">
-                    <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
-                    <div>
-                        <h4 className="text-amber-800 font-semibold text-sm">IA: Patrón detectado</h4>
-                        <p className="text-amber-700 text-sm mt-1">
-                            El registro reciente de hábitos tiene una correlación {'>'} 80% con episodios pasados de alto riesgo o estancamiento. Sugerimos analizar el caso para anticipar intervención.
-                        </p>
-                    </div>
-                </div>
-            )}
-
             {/* Page Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Carlos Mendoza</h2>
-                    <p className="text-slate-500">ID: {mockPatientId} • 45 Años • Perfil: Resistencia a la Insulina</p>
+                    <h2 className="text-2xl font-bold text-slate-800 tracking-tight">{patient.full_name}</h2>
+                    <p className="text-slate-500">ID: {patientId}{age ? ` • ${age} Años` : ''} • Fenotipo: {phenotype}</p>
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <Link href={`/pacientes/${patientId}/informe`}>
+                        <Button variant="outline" className="border-slate-300 text-slate-700 bg-white">
+                            <FileText className="w-4 h-4 mr-2" />
+                            Ver Informe
+                        </Button>
+                    </Link>
                     <Button variant="outline" className="border-slate-300 text-slate-700 bg-white">
                         <MessageSquareWarning className="w-4 h-4 mr-2" />
                         Notas Clínicas
                     </Button>
 
-                    <AISidebar patientId={mockPatientId} />
+                    <AISidebar patientId={patientId} />
 
-                    <Link href="/consulta/nueva">
+                    <Link href={`/consulta/nueva?patientId=${patientId}`}>
                         <Button className="bg-primary hover:bg-primary/90 text-white">
                             <FilePlus className="w-4 h-4 mr-2" />
                             Nueva Consulta
@@ -80,17 +127,17 @@ export default function PatientProfilePage() {
             {/* 360 Profile Dashboard */}
             <div>
                 <h3 className="text-lg font-semibold text-slate-800 mb-4">Estado Crítico Actual</h3>
-                <CriticalStateCards metrics={mockMetrics} />
+                <CriticalStateCards metrics={metricsForCards} />
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <div>
                     <h3 className="text-lg font-semibold text-slate-800 mb-4">Evolución Metabólica</h3>
-                    <EvolutionCharts data={mockEvolutionData} />
+                    <EvolutionCharts data={chartData} />
                 </div>
                 <div>
-                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Comportamiento (Últimos 7 días)</h3>
-                    <CorrelationMap data={mockCorrelationData} />
+                    <h3 className="text-lg font-semibold text-slate-800 mb-4">Comportamiento (Últimos 14 días)</h3>
+                    <CorrelationMap data={correlationData} />
                 </div>
             </div>
 

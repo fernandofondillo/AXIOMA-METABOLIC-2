@@ -1,18 +1,44 @@
-export default function ConfiguracionPage() {
+import { createClient } from '@/lib/supabase/server';
+import { ConfigurationForm } from './ConfigurationForm';
+import { Settings } from 'lucide-react';
+
+export default async function ConfiguracionPage() {
+    const supabase = await createClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // Fetch existing profile data if any
+    let profileData = { full_name: '', specialty: '', medical_center: '' };
+    if (user) {
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name, specialty, medical_center')
+            .eq('id', user.id)
+            .single();
+
+        if (profile) {
+            profileData = {
+                full_name: profile.full_name ?? '',
+                specialty: profile.specialty ?? '',
+                medical_center: profile.medical_center ?? '',
+            };
+        }
+    }
+
     return (
-        <div className="flex flex-col items-center justify-center h-[60vh] text-center px-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-6">
-                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+        <div className="space-y-8">
+            {/* Header */}
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <Settings className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Configuración</h1>
+                    <p className="text-slate-500 text-sm">Gestiona tu perfil profesional y la información que aparece en los informes.</p>
+                </div>
             </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent mb-4">
-                Ajustes del Sistema
-            </h1>
-            <p className="text-slate-500 max-w-md text-lg">
-                La configuración y personalización del motor de Inteligencia Clínica estará disponible en la próxima versión.
-            </p>
+
+            <ConfigurationForm initialData={profileData} />
         </div>
     );
 }

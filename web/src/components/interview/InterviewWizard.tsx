@@ -11,7 +11,11 @@ import { getPatientPhenotype, suggestMicroChanges, PatientMetrics, PatientTrigge
 import { saveInterviewData } from '@/app/actions/interview';
 import { useRouter } from 'next/navigation';
 
-export function InterviewWizard() {
+interface InterviewWizardProps {
+    patientId: string;
+}
+
+export function InterviewWizard({ patientId }: InterviewWizardProps) {
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [step, setStep] = useState(1);
@@ -93,10 +97,14 @@ export function InterviewWizard() {
                 imc: imc || undefined
             };
 
-            const phenotype = getPatientPhenotype(metrics, triggers);
-            setGeneratedPhenotype(phenotype);
+            const engineResult = getPatientPhenotype(metrics, triggers);
+            const phenotypeStr = engineResult.flags.length > 0
+                ? `${engineResult.phenotype} (${engineResult.flags.join(', ')})`
+                : engineResult.phenotype;
 
-            const suggestions = suggestMicroChanges(phenotype, 3);
+            setGeneratedPhenotype(phenotypeStr);
+
+            const suggestions = suggestMicroChanges(engineResult.phenotype, engineResult.flags, 3);
             setMicroChanges(suggestions.map(s => ({ id: s.id, label: s.title + ': ' + s.description, checked: true })));
         }
         setStep(3);
@@ -112,8 +120,6 @@ export function InterviewWizard() {
     const prevStep = () => setStep(s => Math.max(s - 1, 1));
     const submit = async () => {
         setIsSubmitting(true);
-        // Mock Patient ID for now
-        const patientId = 'P-9842';
 
         const metricsData = {
             peso: p || null,
@@ -221,22 +227,26 @@ export function InterviewWizard() {
                                 <span className="text-2xl font-bold text-slate-700">{imc ? imc : '--'}</span>
                             </div>
 
-                            <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!rca ? 'bg-slate-50 border-slate-100' : rca > 0.5 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
-                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!rca ? 'text-slate-500' : rca > 0.5 ? 'text-red-600' : 'text-emerald-600'}`}>RCA</p>
+                            <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!rca ? 'bg-slate-50 border-slate-100' : rca > 0.5 ? 'bg-red-50 border-red-200 text-red-700 ring-2 ring-red-500 ring-offset-1' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 flex items-center gap-1 ${!rca ? 'text-slate-500' : rca > 0.5 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {rca && rca > 0.5 && <span>⚠️</span>} RCA
+                                </p>
                                 <span className="text-2xl font-bold">{rca ? rca : '--'}</span>
-                                {rca && <span className="text-[10px] mt-1 opacity-80">{rca > 0.5 ? 'Riesgo Cardiometabólico' : 'Saludable'}</span>}
+                                {rca ? <span className="text-[10px] mt-1 font-semibold opacity-90">{rca > 0.5 ? '¡ALERTA! Riesgo Alto' : 'Saludable'}</span> : null}
                             </div>
 
                             <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!rcc ? 'bg-slate-50 border-slate-100' : rcc > 0.85 ? 'bg-orange-50 border-orange-200 text-orange-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
                                 <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!rcc ? 'text-slate-500' : rcc > 0.85 ? 'text-orange-600' : 'text-emerald-600'}`}>RCC</p>
                                 <span className="text-2xl font-bold">{rcc ? rcc : '--'}</span>
-                                {rcc && <span className="text-[10px] mt-1 opacity-80">{rcc > 0.85 ? 'Alerta' : 'Saludable'}</span>}
+                                {rcc ? <span className="text-[10px] mt-1 opacity-80">{rcc > 0.85 ? 'Alerta' : 'Saludable'}</span> : null}
                             </div>
 
                             <div className={`p-4 border rounded-lg flex flex-col items-center justify-center text-center transition-colors ${!gv ? 'bg-slate-50 border-slate-100' : gv > 12 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
-                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 ${!gv ? 'text-slate-500' : gv > 12 ? 'text-red-600' : 'text-emerald-600'}`}>Visceral</p>
+                                <p className={`text-xs font-medium uppercase tracking-wider mb-1 flex items-center gap-1 ${!gv ? 'text-slate-500' : gv > 12 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {gv > 12 && <span>🔥</span>} Visceral
+                                </p>
                                 <span className="text-2xl font-bold">{gv ? gv : '--'}</span>
-                                {gv > 0 && <span className="text-[10px] mt-1 opacity-80">{gv > 12 ? 'Exceso Peligroso' : 'Saludable'}</span>}
+                                {gv > 0 ? <span className="text-[10px] mt-1 font-semibold opacity-90">{gv > 12 ? 'FLAG: Riesgo Inflamatorio' : 'Saludable'}</span> : null}
                             </div>
                         </div>
                     </div>

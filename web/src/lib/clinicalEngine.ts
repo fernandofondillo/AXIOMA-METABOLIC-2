@@ -14,10 +14,12 @@ export const MICRO_CHANGES_LIBRARY: MicroChange[] = [
     // Nutrición
     { id: 'n1', category: 'Nutrición', title: 'Regla del 10%', description: 'Retirar el 10% de la porción servida antes de empezar a comer.', targetPhenotypes: ['Resistencia a Insulina', 'Riesgo Mixto'] },
     { id: 'n2', category: 'Nutrición', title: 'Orden de Ingesta', description: 'Comenzar siempre por la fibra (verduras), luego proteína y grasas, y dejar los almidones/azúcares para el final.', targetPhenotypes: ['Resistencia a Insulina', 'Inflamatorio', 'Riesgo Mixto'] },
-    { id: 'n3', category: 'Nutrición', title: 'Efecto Delboeuf', description: 'Servir las comidas principales en platos de 20cm de diámetro para engaño visual cognitivo.', targetPhenotypes: ['Comedor Emocional', 'Riesgo Mixto'] },
+    { id: 'n3', category: 'Nutrición', title: 'Vajilla Pequeña (Efecto Delboeuf)', description: 'Servir las comidas principales en platos de 20cm de diámetro para engaño visual cognitivo.', targetPhenotypes: ['Comedor Emocional', 'Riesgo Mixto'] },
     { id: 'n4', category: 'Nutrición', title: 'Ayuno Intermitente Suave (12/12)', description: 'Cenar temprano y dejar 12 horas de reposo digestivo nocturno.', targetPhenotypes: ['Resistencia a Insulina', 'Inflamatorio'] },
     { id: 'n5', category: 'Nutrición', title: 'Ventana de Carbohidratos', description: 'Concentrar la ingesta de hidratos de carbono densos en la comida post-entrenamiento.', targetPhenotypes: ['Resistencia a Insulina'] },
     { id: 'n6', category: 'Nutrición', title: 'Masticación Consciente (20x)', description: 'Masticar cada bocado un mínimo de 20 veces, posando los cubiertos entre bocados.', targetPhenotypes: ['Comedor Emocional', 'Inflamatorio'] },
+    { id: 'n7', category: 'Nutrición', title: 'Regla del 80% (Hara Hachi Bu)', description: 'Parar de comer en cuanto sientas que estás al 80% de tu capacidad, antes de la sensación de saciedad total.', targetPhenotypes: ['Comedor Emocional', 'Riesgo Mixto', 'Resistencia a Insulina'] },
+    { id: 'n8', category: 'Nutrición', title: 'Comer con la Mano No Dominante', description: 'Usar la mano contraria a la habitual para sostener el tenedor, obligando a ralentizar la ingesta dramáticamente.', targetPhenotypes: ['Comedor Emocional', 'Inflamatorio'] },
 
     // Antojos
     { id: 'a1', category: 'Antojos', title: 'Puente de los 15 min', description: 'Ante un antojo impulsivo, beber un vaso grande de agua y esperar 15 minutos exactos de reloj antes de decidir.', targetPhenotypes: ['Comedor Emocional', 'Riesgo Mixto'] },
@@ -72,7 +74,12 @@ export function calculateAlertState(value: number, threshold1: number, threshold
     }
 }
 
-export function getPatientPhenotype(metrics: PatientMetrics, triggers: PatientTriggers): Phenotype {
+export interface PhenotypeResult {
+    phenotype: Phenotype;
+    flags: string[];
+}
+
+export function getPatientPhenotype(metrics: PatientMetrics, triggers: PatientTriggers): PhenotypeResult {
     const {
         perimetroCintura,
         altura,
@@ -102,12 +109,17 @@ export function getPatientPhenotype(metrics: PatientMetrics, triggers: PatientTr
         emocional: 0
     };
 
+    const flags: string[] = [];
+
     // 1. Evaluar Perfil Inflamatorio
     if (pcr && pcr > 3) riskFactors.inflamacion += 2;
     else if (pcr && pcr > 1) riskFactors.inflamacion += 1;
 
     if (rca && rca > 0.5) riskFactors.inflamacion += 1;
-    if (grasaVisceral && grasaVisceral > 12) riskFactors.inflamacion += 1;
+    if (grasaVisceral && grasaVisceral > 12) {
+        riskFactors.inflamacion += 1;
+        flags.push('Riesgo Inflamatorio');
+    }
     if (isHighStress) riskFactors.inflamacion += 1;
 
     // 2. Evaluar Resistencia a la Insulina
@@ -124,22 +136,32 @@ export function getPatientPhenotype(metrics: PatientMetrics, triggers: PatientTr
     if (isHighStress) riskFactors.emocional += 1;
 
     // Determinar Fenotipo Predominante
-    if (riskFactors.inflamacion >= 3 && riskFactors.resistencia >= 2) return 'Riesgo Mixto';
+    let phenotype: Phenotype = 'Metabólicamente Estable';
 
-    const maxRisk = Math.max(riskFactors.inflamacion, riskFactors.resistencia, riskFactors.emocional);
+    if (riskFactors.inflamacion >= 3 && riskFactors.resistencia >= 2) {
+        phenotype = 'Riesgo Mixto';
+    } else {
+        const maxRisk = Math.max(riskFactors.inflamacion, riskFactors.resistencia, riskFactors.emocional);
+        if (maxRisk > 0) {
+            if (maxRisk === riskFactors.emocional && riskFactors.emocional >= 3) phenotype = 'Comedor Emocional';
+            else if (maxRisk === riskFactors.resistencia && riskFactors.resistencia >= 2) phenotype = 'Resistencia a Insulina';
+            else if (maxRisk === riskFactors.inflamacion && riskFactors.inflamacion >= 2) phenotype = 'Inflamatorio';
+            else phenotype = 'Riesgo Mixto';
+        }
+    }
 
-    if (maxRisk === 0) return 'Metabólicamente Estable';
-
-    if (maxRisk === riskFactors.emocional && riskFactors.emocional >= 3) return 'Comedor Emocional';
-    if (maxRisk === riskFactors.resistencia && riskFactors.resistencia >= 2) return 'Resistencia a Insulina';
-    if (maxRisk === riskFactors.inflamacion && riskFactors.inflamacion >= 2) return 'Inflamatorio';
-
-    return 'Riesgo Mixto'; // Fallback si no hay claro predominio pero hay riesgos
+    return { phenotype, flags };
 }
 
-export function suggestMicroChanges(phenotype: Phenotype, count: number = 3): MicroChange[] {
+export function suggestMicroChanges(phenotype: Phenotype, flags: string[] = [], count: number = 3): MicroChange[] {
     // Filtrar la biblioteca por cambios que apliquen al fenotipo detectado
     let pool = MICRO_CHANGES_LIBRARY.filter(mc => mc.targetPhenotypes.includes(phenotype));
+
+    // Si hay Riesgo Inflamatorio, añadir explícitamente opciones Anti-inflamatorias con alta prioridad si no están ya
+    if (flags.includes('Riesgo Inflamatorio') && phenotype !== 'Inflamatorio') {
+        const antiInflamatorios = MICRO_CHANGES_LIBRARY.filter(mc => mc.targetPhenotypes.includes('Inflamatorio') && !pool.includes(mc));
+        pool = [...pool, ...antiInflamatorios];
+    }
 
     // Si no hay suficientes, coger los genéricos o buscar Riesgo Mixto
     if (pool.length < count) {
@@ -147,7 +169,7 @@ export function suggestMicroChanges(phenotype: Phenotype, count: number = 3): Mi
         pool = [...pool, ...mixedPool];
     }
 
-    // Si sigue habiendo muy pocos (estable), dar recomendaciones generales aleatorias (en producción usar Fisher-Yates shuffle)
+    // Si sigue habiendo muy pocos (estable), dar recomendaciones generales aleatorias
     if (pool.length === 0) {
         pool = [...MICRO_CHANGES_LIBRARY];
     }
