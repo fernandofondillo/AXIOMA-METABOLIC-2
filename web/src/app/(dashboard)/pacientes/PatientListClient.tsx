@@ -55,7 +55,7 @@ export default function PatientListClient({ initialPatients }: { initialPatients
             const result = await createPatientAction(formData);
 
             if (result.success) {
-                toast.success('✅ Expediente creado con éxito. Ya aparece en la lista.');
+                toast.success('¡Guardado con éxito! El expediente ha sido creado.');
                 setIsModalOpen(false);
                 setNewPatient({
                     nombre: '',

@@ -20,16 +20,24 @@ export async function createPatientAction(patientData: {
         }
 
         // 2. Fetch the user's organization_id from their profile
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('organization_id')
             .eq('id', user.id)
             .single();
 
+        if (profileError || !profile?.organization_id) {
+            console.error('Organization ID not found for professional:', user.id);
+            return {
+                success: false,
+                error: 'No se encontró una organización vinculada a tu perfil. Por favor, contacta a soporte o revisa tu configuración.'
+            };
+        }
+
         // 3. Build full_name for easier queries later
         const fullName = `${patientData.nombre} ${patientData.apellidos || ''}`.trim();
 
-        // 4. Insert patient with organization context
+        // 4. Insert patient with mandatory organization context
         const { data, error } = await supabase
             .from('patients_identity')
             .insert([
@@ -41,7 +49,7 @@ export async function createPatientAction(patientData: {
                     telefono: patientData.telefono || null,
                     fecha_nacimiento: patientData.fechaNacimiento || null,
                     date_of_birth: patientData.fechaNacimiento || null,
-                    organization_id: profile?.organization_id ?? null,
+                    organization_id: profile.organization_id,
                     professional_id: user.id,
                 }
             ])

@@ -34,7 +34,7 @@ export function ConfigurationForm({ initialData }: Props) {
             });
 
             if (result.success) {
-                toast.success('✅ Perfil actualizado. El nombre y especialidad ya aparecerán en el header y en los informes.');
+                toast.success('¡Guardado con éxito! Perfil actualizado.');
             } else {
                 toast.error('Error al guardar: ' + (result.error ?? 'Inténtalo de nuevo.'));
             }
