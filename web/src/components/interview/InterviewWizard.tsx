@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertTriangle } from 'lucide-react';
 import { interviewConfig, InterviewGuide } from '@/config/interviewGuides';
 import { getPatientPhenotype, suggestMicroChanges, PatientMetrics, PatientTriggers, MicroChange } from '@/lib/clinicalEngine';
 import { saveInterviewData } from '@/app/actions/interview';
@@ -76,17 +77,22 @@ export function InterviewWizard({ patientId }: InterviewWizardProps) {
 
     const handleNextToStep3 = () => {
         if (microChanges.length === 0) {
-            // Determine Triggers based on answers map (mocking mapping assuming some known IDs if present)
-            // Ideally we'd map specific questions to these, let's just make a generic extraction
-            // and use the clinicalEngine.
-            const hasStress = Object.values(answers).some(ans => ans.includes('estres') || ans.includes('ansiedad'));
-            const hasCravings = Object.values(answers).some(ans => ans.includes('dulces') || ans.includes('antojos'));
+            // Improve trigger mapping from questionnaire answers
+            const allAnswers = Object.values(answers).flat();
+            const hasStress = allAnswers.includes('estres') || allAnswers.includes('ansiedad_laboral');
+            const hasEmotional = allAnswers.some(a => ['aburrimiento', 'soledad', 'recompensa'].includes(a));
 
+            // Map questionnaire values to clinical triggers
             const triggers: PatientTriggers = {
                 nivelEstres: hasStress ? 'Alto' : 'Medio',
-                intensidadAntojos: hasCravings ? 'Alta' : 'Baja',
-                disparadoresEmocionales: hasStress ? ['Estrés crónico'] : []
+                intensidadAntojos: hasEmotional ? 'Alta' : 'Media',
+                disparadoresEmocionales: []
             };
+
+            if (allAnswers.includes('soledad')) triggers.disparadoresEmocionales?.push('Soledad');
+            if (allAnswers.includes('recompensa')) triggers.disparadoresEmocionales?.push('Recompensa');
+            if (allAnswers.includes('aburrimiento')) triggers.disparadoresEmocionales?.push('Aburrimiento');
+            if (hasStress) triggers.disparadoresEmocionales?.push('Estrés crónico');
 
             const metrics: PatientMetrics = {
                 peso: p || undefined,
@@ -178,6 +184,20 @@ export function InterviewWizard({ patientId }: InterviewWizardProps) {
                 {/* STEP 1: Bio-Metrics */}
                 {step === 1 && (
                     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {/* Clinical Alerts Banner */}
+                        {((rca && rca > 0.5) || (gv && gv > 12)) && (
+                            <div className="p-4 bg-red-50 border border-red-200 rounded-lg border-l-4">
+                                <h4 className="text-red-800 font-bold flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                                    ALERTAS CLÍNICAS CRÍTICAS
+                                </h4>
+                                <ul className="text-red-700 text-sm mt-2 list-disc list-inside space-y-1 font-medium">
+                                    {rca && rca > 0.5 && <li>RCA {rca}: Riesgo cardiovascular elevado (Distribución androide).</li>}
+                                    {gv && gv > 12 && <li>Grasa Visceral {gv}: Nivel crítico (Riesgo inflamatorio sistémico).</li>}
+                                </ul>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
                                 <Label htmlFor="peso" className="text-slate-700">Peso (kg)</Label>

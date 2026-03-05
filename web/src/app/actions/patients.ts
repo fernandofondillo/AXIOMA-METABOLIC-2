@@ -58,24 +58,6 @@ export async function createPatientAction(patientData: {
 
         if (error) {
             console.error('Error creating patient:', error);
-            // If certain columns don't exist yet, try a minimal insert
-            if (error.code === '42703') { // column does not exist
-                const { data: minData, error: minError } = await supabase
-                    .from('patients_identity')
-                    .insert([{
-                        nombre: patientData.nombre,
-                        apellidos: patientData.apellidos || null,
-                        email: patientData.email || null,
-                        telefono: patientData.telefono || null,
-                        fecha_nacimiento: patientData.fechaNacimiento || null,
-                    }])
-                    .select()
-                    .single();
-
-                if (minError) throw new Error(minError.message);
-                revalidatePath('/pacientes');
-                return { success: true, patient: minData };
-            }
             throw new Error(error.message || 'Error al guardar el paciente');
         }
 
