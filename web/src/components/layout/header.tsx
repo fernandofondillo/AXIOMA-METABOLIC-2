@@ -1,28 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
+import { getProfileAction } from '@/app/actions/profile';
 import { Menu, Bell } from 'lucide-react';
 
 export async function Header() {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const profile = await getProfileAction();
 
-    // Fetch professional profile from profiles table
-    let displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Dr. Profesional';
-    let specialty = 'Especialista Clínico';
-    let orgName = 'Axioma Metabolic';
-
-    if (user) {
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name, specialty, medical_center')
-            .eq('id', user.id)
-            .single();
-
-        if (profile) {
-            if (profile.full_name) displayName = profile.full_name;
-            if (profile.specialty) specialty = profile.specialty;
-            if (profile.medical_center) orgName = profile.medical_center;
-        }
-    }
+    // Default values
+    let displayName = profile?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Dr. Profesional';
+    let specialty = profile?.specialty || 'Especialista Clínico';
+    let orgName = profile?.medical_center || 'Axioma Metabolic';
 
     // Create initials from the display name
     const initials = displayName

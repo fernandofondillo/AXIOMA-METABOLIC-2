@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { getProfileAction } from './profile';
 
 export async function createPatientAction(patientData: {
     nombre: string;
@@ -20,17 +21,13 @@ export async function createPatientAction(patientData: {
         }
 
         // 2. Fetch the user's organization_id from their profile
-        const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('organization_id')
-            .eq('id', user.id)
-            .single();
+        const profile = await getProfileAction();
 
-        if (profileError || !profile?.organization_id) {
+        if (!profile?.organization_id) {
             console.error('Organization ID not found for professional:', user.id);
             return {
                 success: false,
-                error: 'No se encontró una organización vinculada a tu perfil. Por favor, contacta a soporte o revisa tu configuración.'
+                error: 'No se encontró una organización vinculada a tu perfil. Revisa tu configuración.'
             };
         }
 

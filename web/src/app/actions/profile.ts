@@ -8,6 +8,7 @@ export interface ProfileData {
     specialty: string;
     medical_center: string;
     bio: string;
+    organization_id?: string;
 }
 
 export async function updateProfileAction(data: ProfileData): Promise<{ success: boolean; error?: string }> {
@@ -46,7 +47,7 @@ export async function getProfileAction(): Promise<ProfileData | null> {
 
     const { data } = await supabase
         .from('profiles')
-        .select('full_name, specialty, medical_center, bio')
+        .select('full_name, specialty, medical_center, bio, organization_id')
         .eq('id', user.id)
         .single();
 
@@ -55,5 +56,6 @@ export async function getProfileAction(): Promise<ProfileData | null> {
         specialty: data.specialty ?? '',
         medical_center: data.medical_center ?? '',
         bio: data.bio ?? '',
+        organization_id: data.organization_id ?? undefined,
     } : null;
 }
